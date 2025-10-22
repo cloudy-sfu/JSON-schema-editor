@@ -4,7 +4,7 @@ from functools import partial
 from operator import attrgetter
 
 import jsonschema
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QAction, QFontMetrics, QDoubleValidator, QIntValidator
 from PyQt6.QtWidgets import *
 
@@ -40,11 +40,12 @@ class SchemaEditor(QMainWindow):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("JSON Schema Editor")
-        screen_size = self.screen().size()
-        window_width = round(0.75 * screen_size.width())
-        window_height = round(window_width / 1.6)
-        self.setMinimumWidth(window_width)
-        self.setMinimumHeight(window_height)
+        screen_coord = self.screen().availableGeometry()
+        screen_width = screen_coord.right() - screen_coord.left()
+        screen_height = screen_coord.bottom() - screen_coord.top()
+        init_width = round(min(0.75 * screen_width, 1.6 * screen_height))
+        init_height = round(init_width / 1.6)
+        self.resize(QSize(init_width, init_height))
 
         # Main window
         layout_1 = QVBoxLayout()
