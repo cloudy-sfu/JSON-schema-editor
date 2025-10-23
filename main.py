@@ -8,6 +8,8 @@ from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QAction, QFontMetrics, QDoubleValidator, QIntValidator
 from PyQt6.QtWidgets import *
 
+from is_type import is_type
+from move_to_dialog import MoveToDialog
 from table_dialog import TableDialog
 
 
@@ -94,7 +96,7 @@ class SchemaEditor(QMainWindow):
         self.type_list = QListWidget()
         self.type_list.setSelectionMode(QAbstractItemView.SelectionMode.MultiSelection)
         self.type_list.addItems([
-            "string", "number", "object", "array", "boolean", "null"
+            "string", "number", "boolean", "integer", "object", "array", "null"
         ])
         font = QFontMetrics(self.type_list.font())
         line_height = font.height()
@@ -218,6 +220,10 @@ class SchemaEditor(QMainWindow):
         add_node = QAction("&Add descendant", self)
         add_node.triggered.connect(self.add_node)
         add_node.setShortcut("Ctrl+D")
+        move_node = QAction("&Move to", self)
+        move_node.triggered.connect(partial(self.copy_node, True))
+        copy_node = QAction("&Copy to", self)
+        copy_node.triggered.connect(self.copy_node)
 
         # Menu bar -> Validate
         v_schema = QAction("Validate &schema", self)
@@ -227,20 +233,11 @@ class SchemaEditor(QMainWindow):
 
         # Menu bar -> First-level buttons
         file = QMenu("&File", self)
-        file.addActions([
-            open_, new, save, save_as, close_
-        ])
+        file.addActions([open_, new, save, save_as, close_])
         edit_ = QMenu('&Edit', self)
-        edit_.addActions([
-            add_node,
-            del_node,
-            help_,
-        ])
+        edit_.addActions([add_node, del_node, move_node, copy_node, help_])
         validate = QMenu("&Validate", self)
-        validate.addActions([
-            v_schema,
-            v_ins
-        ])
+        validate.addActions([v_schema, v_ins])
 
         # Menu bar
         menu = QMenuBar(self)
@@ -476,7 +473,8 @@ class SchemaEditor(QMainWindow):
         else:
             self.string_type.setCurrentText(string_type)
 
-        self.number_group.setEnabled(is_type(self_type, "number"))
+        self.number_group.setEnabled(is_type(self_type, "number") or
+                                     is_type(self_type, "integer"))
         self.num_min.setText(str(
             self_.get("minimum") or self_.get("exclusiveMinimum", "")))
         self.num_max.setText(str(
@@ -498,11 +496,6 @@ class SchemaEditor(QMainWindow):
 
         if not self.path:  # root node
             self.schema["description"] = description
-            is_valid, message = self._validate_schema()
-            if is_valid:
-                self.refresh_tree()
-            else:
-                self.silent_message("warn", "Validator", message)
             return
         p2 = path_to_dict_pointer(self.schema, self.path[:-2])
         p1 = p2[self.path[-2]]
@@ -533,7 +526,7 @@ class SchemaEditor(QMainWindow):
             p2["required"] = list(required_set)
 
         # type-specific constraints
-        is_string = is_type(self_["type"], "string")
+        is_string = is_type(self_.get("type"), "string")
         pattern = self.string_regex.text()
         if is_string and pattern:
             self_["pattern"] = pattern
@@ -545,7 +538,8 @@ class SchemaEditor(QMainWindow):
         else:
             self_.pop("format", None)
 
-        is_number = is_type(self_["type"], "number")
+        is_number = (is_type(self_.get("type"), "number") or
+                     is_type(self_.get("type"), "integer"))
         num_min = self.num_min.text()
         if is_number and num_min:
             if self.num_exclusive_min.isChecked():
@@ -574,7 +568,7 @@ class SchemaEditor(QMainWindow):
         else:
             self_.pop("multipleOf", None)
 
-        is_array = is_type(self_["type"], "array")
+        is_array = is_type(self_.get("type"), "array")
         min_items = self.array_min_len.text()
         if is_array and min_items:
             self_["minItems"] = int(min_items)
@@ -585,12 +579,6 @@ class SchemaEditor(QMainWindow):
             self_["maxItems"] = int(max_items)
         else:
             self_.pop("maxItems", None)
-
-        is_valid, message = self._validate_schema()
-        if is_valid:
-            self.refresh_tree()
-        else:
-            self.silent_message("warn", "Validator", message)
 
     def del_node(self):
         selected_items = self.tree.selectedItems()
@@ -610,11 +598,6 @@ class SchemaEditor(QMainWindow):
         if required and field_name in required:
             p2["required"].remove(field_name)
         del p1[field_name]
-        is_valid, message = self._validate_schema()
-        if is_valid:
-            self.refresh_tree()
-        else:
-            self.silent_message("warn", "Validator", message)
 
     def add_node(self):
         selected_items = self.tree.selectedItems()
@@ -668,11 +651,6 @@ class SchemaEditor(QMainWindow):
                 "\"object\"."
             )
             return
-        is_valid, message = self._validate_schema()
-        if is_valid:
-            self.refresh_tree()
-        else:
-            self.silent_message("warn", "Validator", message)
 
     def validate_data(self):
         validator = jsonschema.Draft7Validator(self.schema)
@@ -707,6 +685,60 @@ class SchemaEditor(QMainWindow):
             self.silent_message(
                 "info", "Validator", "Data fits this schema.")
 
+    def copy_node(self, delete_source=False):
+        src_selected_items = self.tree.selectedItems()
+        if len(src_selected_items) < 1:
+            self.silent_message("info", "Selector", "No item selected.")
+            return
+        src_node = src_selected_items[0]
+        src_path = node_in_tree_to_path(src_node)
+        if not src_path:  # root node
+            self.silent_message(
+                "warn", "Validator", "Cannot copy or move the root.")
+            return
+
+        dialog = MoveToDialog()
+        dialog.refresh_tree(self.schema)
+        if not dialog.exec() == QDialog.DialogCode.Accepted:
+            self.silent_message(
+                "info", "Selector", "Destination selection aborted.")
+            return
+        dest_selected_items = dialog.tree.selectedItems()
+        if len(dest_selected_items) < 1:
+            self.silent_message(
+                "info", "Selector", "Destination not selected.")
+            return
+        dest_node = dest_selected_items[0]
+        dest_path = node_in_tree_to_path(dest_node)
+        dest = path_to_dict_pointer(self.schema, dest_path)
+
+        if not is_type(dest.get("type"), "object"):
+            self.silent_message(
+                "warn", "Selector", "Destination type must be object.")
+            return
+        if set(src_path).issubset(dest_path):
+            self.silent_message(
+                "warn", "Selector",
+                "Destination cannot be subsidiary of or identical to the source.")
+            return
+
+        src_p2 = path_to_dict_pointer(self.schema, src_path[:-2])
+        src_p1 = src_p2[src_path[-2]]
+        src_field_name = src_path[-1]
+        src_required_list = src_p2.get("required", [])
+        src_required = src_required_list and src_field_name in src_required_list
+        src = src_p1[src_field_name]
+
+        dest.setdefault("properties", {})
+        src_copy = src.copy()
+        if delete_source:
+            if src_required:
+                src_p2["required"].remove(src_field_name)
+            del src_p1[src_field_name]
+        dest["properties"][src_field_name] = src_copy
+        if src_required:
+            dest["required"].append(src_field_name)
+
 
 def path_to_dict_pointer(dict_, path):
     p = dict_
@@ -719,11 +751,12 @@ def node_in_tree_to_path(node):
     path = []
     while node:
         field_name = node.data(0, Qt.ItemDataRole.EditRole)
-        if field_name:
+        is_element = node.data(1, Qt.ItemDataRole.EditRole)
+        if is_element == "E":
+            path.append("items")
+        else:
             path.append(field_name)
             path.append("properties")
-        else:
-            path.append("items")
         node = node.parent()
     path.pop()  # Don't need root node and redundant properties beyond root
     path.pop()
@@ -745,7 +778,7 @@ def display_type(type_) -> str:
 def json_to_tree(parent, field_name, property_, required, is_array_item=False):
     assert isinstance(parent, QTreeWidgetItem), "Parent node is not a tree item."
     if is_array_item:
-        col_0 = ""
+        col_0 = "<element>"
         col_1 = "E"
     else:
         col_0 = field_name
@@ -758,7 +791,7 @@ def json_to_tree(parent, field_name, property_, required, is_array_item=False):
     ])
     parent.addChild(self_)
     if "properties" in property_.keys():
-        for sub_field, sub_property in property_.get("properties", {}).items():
+        for sub_field, sub_property in property_["properties"].items():
             json_to_tree(
                 self_,
                 sub_field,
@@ -773,18 +806,6 @@ def json_to_tree(parent, field_name, property_, required, is_array_item=False):
             None,
             is_array_item=True
         )
-
-
-def is_type(actual_type, expected_type) -> bool:
-    if actual_type is None:
-        return False
-    elif isinstance(actual_type, str):
-        return actual_type == expected_type
-    elif isinstance(actual_type, list):
-        return expected_type in actual_type
-    else:
-        raise ValueError(
-            f"JSON schema is invalid: field type \"{actual_type}\" is invalid.")
 
 
 if __name__ == '__main__':
