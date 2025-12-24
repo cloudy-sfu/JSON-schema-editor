@@ -502,7 +502,7 @@ class SchemaEditor(QMainWindow):
         self_ = p1[self.path[-1]]
         match len(type_list):
             case 0:
-                self_.pop("type")
+                self_.pop("type", None)
             case 1:
                 self_["type"] = type_list[0]
             case 2:
@@ -651,6 +651,7 @@ class SchemaEditor(QMainWindow):
                 "\"object\"."
             )
             return
+        self.refresh_tree()
 
     def validate_data(self):
         validator = jsonschema.Draft7Validator(self.schema)
