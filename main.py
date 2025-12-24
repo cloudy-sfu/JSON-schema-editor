@@ -527,58 +527,68 @@ class SchemaEditor(QMainWindow):
 
         # type-specific constraints
         is_string = is_type(self_.get("type"), "string")
-        pattern = self.string_regex.text()
-        if is_string and pattern:
-            self_["pattern"] = pattern
-        else:
-            self_.pop("pattern", None)
-        string_type = self.string_type.currentText()
-        if is_string and string_type:
-            self_["format"] = string_type
-        else:
-            self_.pop("format", None)
+        if is_string:
+            pattern = self.string_regex.text()
+            string_type = self.string_type.currentText()
+            if pattern:
+                self_["pattern"] = pattern
+            else:
+                self_.pop("pattern", None)
+            if string_type:
+                self_["format"] = string_type
+            else:
+                self_.pop("format", None)
 
         is_number = (is_type(self_.get("type"), "number") or
                      is_type(self_.get("type"), "integer"))
-        num_min = self.num_min.text()
-        if is_number and num_min:
-            if self.num_exclusive_min.isChecked():
+        if is_number:
+            num_min = self.num_min.text()
+            num_max = self.num_max.text()
+            multiple_of = self.num_multiple_of.text()
+            if num_min:
+                if self.num_exclusive_min.isChecked():
+                    self_.pop("minimum", None)
+                    self_["exclusiveMinimum"] = float(num_min)
+                else:
+                    self_["minimum"] = float(num_min)
+                    self_.pop("exclusiveMinimum", None)
+            else:
                 self_.pop("minimum", None)
-                self_["exclusiveMinimum"] = float(num_min)
-            else:
-                self_["minimum"] = float(num_min)
                 self_.pop("exclusiveMinimum", None)
-        else:
-            self_.pop("minimum", None)
-            self_.pop("exclusiveMinimum", None)
-        num_max = self.num_max.text()
-        if is_number and num_max:
-            if self.num_exclusive_max.isChecked():
-                self_.pop("maximum", None)
-                self_["exclusiveMaximum"] = float(num_max)
+            if num_max:
+                if self.num_exclusive_max.isChecked():
+                    self_.pop("maximum", None)
+                    self_["exclusiveMaximum"] = float(num_max)
+                else:
+                    self_["maximum"] = float(num_max)
+                    self_.pop("exclusiveMaximum", None)
             else:
-                self_["maximum"] = float(num_max)
+                self_.pop("maximum", None)
                 self_.pop("exclusiveMaximum", None)
-        else:
-            self_.pop("maximum", None)
-            self_.pop("exclusiveMaximum", None)
-        multiple_of = self.num_multiple_of.text()
-        if is_number and multiple_of:
-            self_["multipleOf"] = float(multiple_of)
-        else:
-            self_.pop("multipleOf", None)
+            if multiple_of:
+                self_["multipleOf"] = float(multiple_of)
+            else:
+                self_.pop("multipleOf", None)
 
         is_array = is_type(self_.get("type"), "array")
-        min_items = self.array_min_len.text()
-        if is_array and min_items:
-            self_["minItems"] = int(min_items)
+        if is_array:
+            min_items = self.array_min_len.text()
+            max_items = self.array_max_len.text()
+            if min_items:
+                self_["minItems"] = int(min_items)
+            else:
+                self_.pop("minItems", None)
+            if max_items:
+                self_["maxItems"] = int(max_items)
+            else:
+                self_.pop("maxItems", None)
         else:
-            self_.pop("minItems", None)
-        max_items = self.array_max_len.text()
-        if is_array and max_items:
-            self_["maxItems"] = int(max_items)
-        else:
-            self_.pop("maxItems", None)
+            self_.pop("items", None)
+
+        is_object = is_type(self_.get("type"), "object")
+        if not is_object:
+            self_.pop("properties", None)
+        self.refresh_tree()
 
     def del_node(self):
         selected_items = self.tree.selectedItems()
