@@ -608,6 +608,7 @@ class SchemaEditor(QMainWindow):
         if required and field_name in required:
             p2["required"].remove(field_name)
         del p1[field_name]
+        self.refresh_tree()
 
     def add_node(self):
         selected_items = self.tree.selectedItems()
@@ -748,7 +749,9 @@ class SchemaEditor(QMainWindow):
             del src_p1[src_field_name]
         dest["properties"][src_field_name] = src_copy
         if src_required:
+            dest.setdefault("required", [])
             dest["required"].append(src_field_name)
+        self.refresh_tree()
 
 
 def path_to_dict_pointer(dict_, path):
